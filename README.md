@@ -239,6 +239,8 @@ Three roles, enforced on the server for every mutating route and mirrored in the
 
 Accounts are created automatically on first Google sign-in (name/avatar/email come from the OAuth profile — there is no manual signup). The **first user to sign in becomes ADMIN**, as does any address in `ADMIN_EMAILS`; everyone after defaults to MEMBER. The last remaining admin cannot be demoted, so the instance can never be locked out. Roles are changed from **Settings → Users**.
 
+Because the dashboard issues several API calls in parallel, a new user's first page load races on account creation; `upsertUser` collapses that to a single insert and falls back to an update on a unique-constraint collision, so the first load never 500s.
+
 ### Runtime settings from the dashboard
 
 Admins can tune throughput live at **/dashboard/settings** — minimum send delay, hourly cap per sender, worker concurrency and sender count — with per-field range validation and a full audit trail of who changed what.
@@ -260,8 +262,8 @@ Admins can tune throughput live at **/dashboard/settings** — minimum send dela
 
 Stated plainly rather than buried:
 
-- **Google OAuth is implemented but has not been exercised against real credentials** — the flow, ID-token verification, and refresh logic are written and type-check, but were developed with `AUTH_DISABLED=true`. Everything else in this README was verified end-to-end.
 - Attachments are stored inline in Postgres (`bytea`), which is fine at assignment scale but would move to object storage in production.
+- The ID-token **refresh** path (renewing after ~1 hour) is implemented but has not been observed firing, since verification took under an hour. The initial sign-in and token verification are confirmed working.
 - Once a worker has claimed a row, an in-flight SMTP send cannot be recalled; delete then soft-deletes and reports `cancelled: false` (see above).
 - A full Redis data loss resets the current hour's rate-limit counters (scheduled emails themselves are rebuilt from Postgres).
 

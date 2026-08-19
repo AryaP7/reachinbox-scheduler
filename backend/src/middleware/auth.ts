@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { OAuth2Client } from 'google-auth-library';
+import { Prisma } from '@prisma/client';
 import type { Role, User } from '@prisma/client';
 import { config } from '../config';
 import { prisma } from '../lib/prisma';
@@ -28,30 +29,43 @@ async function upsertUser(profile: {
   name?: string | null;
   image?: string | null;
 }): Promise<User> {
+  const touch = {
+    name: profile.name ?? undefined,
+    image: profile.image ?? undefined,
+    lastLogin: new Date(),
+  };
+
   const existing = await prisma.user.findUnique({ where: { email: profile.email } });
   if (existing) {
-    return prisma.user.update({
-      where: { email: profile.email },
-      data: {
-        name: profile.name ?? existing.name,
-        image: profile.image ?? existing.image,
-        lastLogin: new Date(),
-      },
-    });
+    return prisma.user.update({ where: { email: profile.email }, data: touch });
   }
 
   const isSeedAdmin = config.adminEmails.includes(profile.email.toLowerCase());
   const isFirstUser = (await prisma.user.count()) === 0;
 
-  return prisma.user.create({
-    data: {
-      email: profile.email,
-      name: profile.name ?? null,
-      image: profile.image ?? null,
-      role: isSeedAdmin || isFirstUser ? 'ADMIN' : 'MEMBER',
-      lastLogin: new Date(),
-    },
-  });
+  // The dashboard fires several API calls in parallel, so a brand-new user's
+  // first page load races here: every request sees "no such user" and tries to
+  // create one. upsert collapses that to a single insert, and the P2002 catch
+  // covers the narrow window where two inserts still interleave — otherwise the
+  // losing requests would 500 on the user's very first load.
+  try {
+    return await prisma.user.upsert({
+      where: { email: profile.email },
+      update: touch,
+      create: {
+        email: profile.email,
+        name: profile.name ?? null,
+        image: profile.image ?? null,
+        role: isSeedAdmin || isFirstUser ? 'ADMIN' : 'MEMBER',
+        lastLogin: touch.lastLogin,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return prisma.user.update({ where: { email: profile.email }, data: touch });
+    }
+    throw err;
+  }
 }
 
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
