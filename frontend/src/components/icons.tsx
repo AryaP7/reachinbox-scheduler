@@ -150,6 +150,44 @@ export function TrashIcon({ className = 'h-4 w-4' }: IconProps) {
   );
 }
 
+export function SettingsIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  );
+}
+
+export function UsersIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20a6 6 0 0112 0" />
+      <path d="M16 5.2a3.2 3.2 0 010 5.6M18 20a6 6 0 00-2.2-4.65" />
+    </svg>
+  );
+}
+
+export function DownloadIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <path d="M12 4v12" />
+      <path d="M8 12l4 4 4-4" />
+      <path d="M4 18v1a1 1 0 001 1h14a1 1 0 001-1v-1" />
+    </svg>
+  );
+}
+
+export function FileIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <path d="M14 3v5h5" />
+      <path d="M19 8v11a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1h8l5 4z" />
+    </svg>
+  );
+}
+
 export function LogoutIcon({ className = 'h-4 w-4' }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>

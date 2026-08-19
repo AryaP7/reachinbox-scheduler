@@ -6,20 +6,32 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { EmailRow } from '@/components/EmailRow';
+import { FilterPanel } from '@/components/FilterPanel';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { IconButton } from '@/components/ui/Button';
 import { FilterIcon, RefreshIcon, SearchIcon } from '@/components/icons';
 import { fetchEmails } from '@/lib/api';
-import type { EmailItem, TabKey } from '@/lib/types';
+import { useCounts } from '@/lib/useCounts';
+import { useMe } from '@/lib/useMe';
+import type { EmailFilters, EmailItem, TabKey } from '@/lib/types';
 
 const REFRESH_MS = 15_000;
 const PAGE_SIZE = 20;
 
+const EMPTY_FILTERS: EmailFilters = { state: 'all', senderId: undefined, starred: undefined };
+
+function isTab(value: string | null): value is TabKey {
+  return value === 'scheduled' || value === 'sent' || value === 'archived';
+}
+
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const { me } = useMe();
+  const { reload: reloadCounts } = useCounts();
   const searchParams = useSearchParams();
-  const tab: TabKey = searchParams.get('tab') === 'sent' ? 'sent' : 'scheduled';
+  const tabParam = searchParams.get('tab');
+  const tab: TabKey = isTab(tabParam) ? tabParam : 'scheduled';
 
   const [items, setItems] = useState<EmailItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -27,8 +39,14 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filters, setFilters] = useState<EmailFilters>(EMPTY_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const idToken = session?.idToken;
+  const filterCount =
+    (filters.state !== 'all' ? 1 : 0) +
+    (filters.senderId ? 1 : 0) +
+    (filters.starred !== undefined ? 1 : 0);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -37,13 +55,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, debouncedSearch]);
+  }, [tab, debouncedSearch, filters]);
 
   const load = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const data = await fetchEmails(tab, page, idToken, debouncedSearch || undefined);
+        const data = await fetchEmails(tab, page, idToken, debouncedSearch || undefined, filters);
         setItems(data.items);
         setTotal(data.total);
       } catch (err) {
@@ -52,7 +70,7 @@ export default function DashboardPage() {
         if (!silent) setLoading(false);
       }
     },
-    [tab, page, idToken, debouncedSearch]
+    [tab, page, idToken, debouncedSearch, filters]
   );
 
   useEffect(() => {
@@ -65,7 +83,28 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [load]);
 
+  const handleChanged = useCallback(() => {
+    void load(true);
+    void reloadCounts();
+  }, [load, reloadCounts]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const emptyCopy: Record<TabKey, { title: string; description: string }> = {
+    scheduled: {
+      title: 'No scheduled emails',
+      description: 'Compose a new email to get your first batch on the calendar.',
+    },
+    sent: {
+      title: 'No sent emails yet',
+      description: 'Once scheduled emails go out, they will show up here.',
+    },
+    archived: {
+      title: 'Nothing archived',
+      description: 'Archive an email from its detail view to file it away here.',
+    },
+  };
+
+  const filtered = Boolean(debouncedSearch) || filterCount > 0;
 
   return (
     <div className="flex h-screen flex-col">
@@ -79,9 +118,37 @@ export default function DashboardPage() {
             className="w-full rounded-full bg-field py-2 pl-9 pr-4 text-[13px] text-ink outline-none transition-shadow placeholder:text-ink-faint focus:ring-1 focus:ring-brand"
           />
         </div>
-        <IconButton aria-label="Filter" title="Filter">
-          <FilterIcon className="h-4 w-4" />
-        </IconButton>
+
+        <div className="relative">
+          <IconButton
+            aria-label="Filter"
+            title="Filter"
+            onClick={() => setFilterOpen((v) => !v)}
+            className={filterCount > 0 ? 'text-brand' : ''}
+          >
+            <FilterIcon className="h-4 w-4" />
+          </IconButton>
+          {filterCount > 0 && (
+            <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[9px] font-semibold text-white">
+              {filterCount}
+            </span>
+          )}
+          {filterOpen && (
+            <>
+              <button
+                className="fixed inset-0 z-20 cursor-default"
+                onClick={() => setFilterOpen(false)}
+                aria-label="Close filters"
+              />
+              <FilterPanel
+                filters={filters}
+                onChange={setFilters}
+                onClose={() => setFilterOpen(false)}
+              />
+            </>
+          )}
+        </div>
+
         <IconButton
           aria-label="Refresh"
           title="Refresh"
@@ -99,22 +166,12 @@ export default function DashboardPage() {
           </div>
         ) : items.length === 0 ? (
           <EmptyState
-            title={
-              debouncedSearch
-                ? 'No matching emails'
-                : tab === 'scheduled'
-                  ? 'No scheduled emails'
-                  : 'No sent emails yet'
-            }
+            title={filtered ? 'No matching emails' : emptyCopy[tab].title}
             description={
-              debouncedSearch
-                ? 'Try a different search term.'
-                : tab === 'scheduled'
-                  ? 'Compose a new email to get your first batch on the calendar.'
-                  : 'Once scheduled emails go out, they will show up here.'
+              filtered ? 'Try a different search term or clear your filters.' : emptyCopy[tab].description
             }
             action={
-              !debouncedSearch && tab === 'scheduled' ? (
+              !filtered && tab === 'scheduled' && me?.permissions.canSchedule ? (
                 <Link
                   href="/dashboard/compose"
                   className="rounded-full border border-brand px-5 py-1.5 text-[13px] font-medium text-brand transition-colors hover:bg-brand-soft"
@@ -127,7 +184,7 @@ export default function DashboardPage() {
         ) : (
           <div className={loading ? 'opacity-60' : ''}>
             {items.map((email) => (
-              <EmailRow key={email.id} email={email} mode={tab} />
+              <EmailRow key={email.id} email={email} mode={tab} onChanged={handleChanged} />
             ))}
           </div>
         )}

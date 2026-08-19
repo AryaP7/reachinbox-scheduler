@@ -26,16 +26,23 @@ reachinbox-scheduler/
 
 ---
 
-## 0. Quick local demo (no Docker, no Google OAuth)
+## 0. Quick local run (no Docker, no Google OAuth)
 
-For a fast local test the repo ships a demo path — SQLite instead of Postgres, and an env-gated demo login instead of OAuth (Google OAuth remains the real login; the demo provider only exists when `DEMO_MODE=true`):
+Docker is optional. Postgres and Redis both install natively in one command each, and an env-gated demo login lets you skip OAuth while testing (Google OAuth remains the real login path; the demo provider only exists when `DEMO_MODE=true`).
 
-1. Run any Redis-compatible server on `localhost:6379` (Docker, Memurai, or [redis-windows](https://github.com/taizod1024/redis-windows-fork) on Windows).
-2. Backend: set `DATABASE_URL="file:./demo.db"` and `AUTH_DISABLED=true` in `backend/.env`, then `npm run demo:db && npm run dev`.
-3. Frontend: set `DEMO_MODE=true`, `NEXT_PUBLIC_DEMO_MODE=true`, and any `NEXTAUTH_SECRET` in `frontend/.env.local`, then `npm run dev`.
-4. Open http://localhost:3000 → "Continue in demo mode" → schedule away. Sent emails link to their live Ethereal previews.
+On Windows:
 
-> Note: switching between demo (SQLite) and full (Postgres) modes regenerates the Prisma client — run `npm run prisma:generate` (Postgres) or `npm run demo:db` (SQLite) after switching.
+```bash
+winget install PostgreSQL.PostgreSQL.17 --silent --override "--mode unattended --superpassword postgres --serverport 5432"
+```
+
+```bash
+winget install taizod1024.redis-windows-fork --silent
+```
+
+(macOS: `brew install postgresql@17 redis`. Or just use `docker compose up -d`.)
+
+Then create the database, set `AUTH_DISABLED=true` in `backend/.env` and `DEMO_MODE=true` + `NEXT_PUBLIC_DEMO_MODE=true` in `frontend/.env.local`, and run both dev servers. Open http://localhost:3000 and hit **Login** — in demo mode it signs you in without credentials, as an admin.
 
 ## 1. Running the project (full setup)
 
@@ -173,7 +180,23 @@ All endpoints (except `/health`) require `Authorization: Bearer <Google ID token
 | `GET` | `/api/emails/:id` | Single email with full body, for the detail view |
 | `GET` | `/health` | Liveness probe |
 
-`POST /api/emails/schedule` also accepts an optional `senderId` — omit it to rotate round-robin across every sender, or pin the batch to one sender.
+`POST /api/emails/schedule` also accepts an optional `senderId` (omit to rotate round-robin) and an `attachments` array of `{ filename, mimeType, content }` where `content` is base64.
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| `PATCH` | `/api/emails/:id/star` | MEMBER | Toggle star |
+| `PATCH` | `/api/emails/:id/archive` | MEMBER | Archive / restore |
+| `DELETE` | `/api/emails/:id` | MEMBER | Soft-delete; cancels the queued job if it has not sent |
+| `GET` | `/api/emails/attachments/:id/download` | VIEWER | Download an attachment |
+| `GET` | `/api/admin/me` | any | Current user, role and permissions |
+| `GET`/`PUT`/`DELETE` | `/api/admin/settings[/:key]` | ADMIN | Read, override, reset a runtime setting |
+| `GET` | `/api/admin/settings/audit` | ADMIN | Settings change history |
+| `GET` | `/api/admin/users` | ADMIN | List users |
+| `PATCH` | `/api/admin/users/:id/role` | ADMIN | Change a user's role |
+
+### A note on cancelling a send
+
+`DELETE` returns `cancelled: true` only when the job was still waiting in Redis and was genuinely removed. If a worker has already claimed the row, the SMTP handoff is in flight and cannot be recalled — the API then reports `cancelled: false` and the UI says so, rather than claiming a cancellation that did not happen. The worker claims each row with a conditional `updateMany` before touching SMTP, so a delete that lands first reliably wins.
 
 ---
 
@@ -188,12 +211,32 @@ All endpoints (except `/health`) require `Authorization: Bearer <Google ID token
 - ✅ Concurrency: configurable worker concurrency, safe under parallelism
 - ✅ Retries with backoff + `FAILED` state; Zod-validated APIs; Google ID token verification middleware
 
+### Access control (RBAC)
+
+Three roles, enforced on the server for every mutating route and mirrored in the UI:
+
+| Role | Can do |
+|---|---|
+| **VIEWER** | Read the dashboard: lists, detail views, attachments |
+| **MEMBER** | Everything above, plus compose/schedule and star/archive/delete |
+| **ADMIN** | Everything above, plus runtime Settings and user role management |
+
+Accounts are created automatically on first Google sign-in (name/avatar/email come from the OAuth profile — there is no manual signup). The **first user to sign in becomes ADMIN**, as does any address in `ADMIN_EMAILS`; everyone after defaults to MEMBER. The last remaining admin cannot be demoted, so the instance can never be locked out. Roles are changed from **Settings → Users**.
+
+### Runtime settings from the dashboard
+
+Admins can tune throughput live at **/dashboard/settings** — minimum send delay, hourly cap per sender, worker concurrency and sender count — with per-field range validation and a full audit trail of who changed what.
+
+**These are stored in the database, not written back to `.env`, and that is deliberate.** Env vars are only read at process start, so rewriting the file would appear to do nothing until a restart; an endpoint that writes env files is also an arbitrary-write/RCE risk if auth is ever bypassed (`NODE_OPTIONS`, `DATABASE_URL`, …). A DB row applies immediately across every worker and instance, and is safely scoped: only four whitelisted numeric keys are editable, and secrets and connection strings are rejected outright. Each row shows its env default and can be reset back to it.
+
 **Frontend** — built to match the provided Figma (light theme, left sidebar, list rows):
 - ✅ **Login screen**: Google OAuth via NextAuth + the email/password form from the design, centered card
 - ✅ **Sidebar**: ONB logo, user avatar/name/email with logout menu, Compose button, CORE nav (Scheduled / Sent) with live counts
-- ✅ **List screens**: search + filter + refresh row; rows show `To:`, an orange scheduled-time chip (or Sent/Failed chip), bold subject with body preview, and a star toggle
-- ✅ **Compose page**: From selector (real sender accounts, or round-robin), recipient chips with `+N` overflow, Upload List for CSV/TXT, Subject, Delay between 2 emails, Hourly Limit, rich-text editor with the full Figma toolbar, and a Send Later popover with quick picks
-- ✅ **Email detail**: sender block with avatar, recipient, timestamp, rendered HTML body, status pill, Ethereal preview link
+- ✅ **List screens**: search, a working **filter panel** (status / sender / starred-only, with an active-filter count), refresh; rows show `To:`, an orange scheduled-time chip (or Sent/Failed/Cancelled chip), bold subject with body preview, attachment count, and a **persisted star toggle**
+- ✅ **Compose page**: From selector (real sender accounts, or round-robin), recipient chips with `+N` overflow, Upload List for CSV/TXT, **working attachments** via the paperclip (multi-file, size-capped, sent as real MIME attachments), Subject, Delay between 2 emails, Hourly Limit, rich-text editor with the full Figma toolbar, and a Send Later popover with quick picks
+- ✅ **Email detail**: sender block with avatar, recipient, timestamp, rendered HTML body, downloadable attachment cards, status pill, Ethereal preview link, and working **star / archive / delete** (delete cancels a not-yet-sent email and pulls it from the queue)
+- ✅ **Archived** view alongside Scheduled and Sent
+- ✅ **Settings** and **Users** pages for admins, hidden entirely from non-admins
 - ✅ Loading states, empty states, pagination, error/success toasts, live 15 s refresh
 - ✅ Reusable UI kit (Button, IconButton, Spinner, EmptyState, icon set), typed API client, shared `useCounts` hook
 

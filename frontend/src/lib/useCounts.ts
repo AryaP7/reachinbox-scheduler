@@ -7,11 +7,11 @@ import type { Counts } from './types';
 
 const REFRESH_MS = 15_000;
 
-/** Sidebar counts, refreshed quietly so Scheduled/Sent totals track the worker. */
+/** Sidebar counts, refreshed quietly so totals track the worker. */
 export function useCounts() {
   const { data: session } = useSession();
   const idToken = session?.idToken;
-  const [counts, setCounts] = useState<Counts>({ scheduled: 0, sent: 0 });
+  const [counts, setCounts] = useState<Counts>({ scheduled: 0, sent: 0, archived: 0 });
 
   const reload = useCallback(async () => {
     try {

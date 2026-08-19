@@ -1,14 +1,39 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Sidebar } from './Sidebar';
 import { useCounts } from '@/lib/useCounts';
+import { MeContext } from '@/lib/useMe';
+import { fetchMe } from '@/lib/api';
+import type { Me } from '@/lib/types';
 import { Spinner } from './ui/Spinner';
 
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { status } = useSession({ required: true });
+  const { data: session, status } = useSession({ required: true });
   const { counts } = useCounts();
+  const [me, setMe] = useState<Me | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
+
+  const idToken = session?.idToken;
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchMe(idToken);
+        if (!cancelled) setMe(data);
+      } catch {
+        // Falls back to the least-privileged UI if the role can't be resolved.
+      } finally {
+        if (!cancelled) setMeLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken, status]);
 
   if (status === 'loading') {
     return (
@@ -19,9 +44,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-white">
-      <Sidebar counts={counts} />
-      <main className="min-w-0 flex-1">{children}</main>
-    </div>
+    <MeContext.Provider value={{ me, loading: meLoading }}>
+      <div className="flex min-h-screen bg-white">
+        <Sidebar counts={counts} />
+        <main className="min-w-0 flex-1">{children}</main>
+      </div>
+    </MeContext.Provider>
   );
 }

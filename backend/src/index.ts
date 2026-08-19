@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from './config';
 import { prisma } from './lib/prisma';
 import { emailsRouter } from './routes/emails';
+import { adminRouter } from './routes/admin';
 import { startWorker } from './queue/worker';
 import { ensureSenders } from './services/senders';
 import { reconcileScheduledEmails } from './services/scheduler';
@@ -12,13 +13,15 @@ async function main() {
   const app = express();
 
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
+  // Generous limit: attachments arrive base64-encoded inside the schedule payload.
+  app.use(express.json({ limit: '32mb' }));
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ ok: true, uptime: process.uptime() });
   });
 
   app.use('/api/emails', emailsRouter);
+  app.use('/api/admin', adminRouter);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' });

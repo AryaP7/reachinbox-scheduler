@@ -12,6 +12,47 @@ enum EmailStatus {
   PROCESSING
   SENT
   FAILED
+  CANCELLED
+}
+
+/// VIEWER: read-only. MEMBER: can compose/schedule and manage their inbox.
+/// ADMIN: everything, plus runtime settings and user role management.
+enum Role {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String?
+  image     String?
+  role      Role      @default(MEMBER)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+/// Runtime configuration overrides, edited from the dashboard by admins.
+/// Env vars remain the boot-time defaults; a row here takes precedence.
+model Setting {
+  key       String   @id
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+/// Append-only trail of who changed which setting and when.
+model SettingAudit {
+  id        String   @id @default(uuid())
+  key       String
+  oldValue  String?
+  newValue  String
+  changedBy String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Sender {
@@ -30,7 +71,7 @@ model Sender {
 model EmailBatch {
   id              String   @id @default(uuid())
   subject         String
-  body            String   @db.Text
+  body            String
   totalRecipients Int
   startTime       DateTime
   delayBetweenMs  Int
@@ -38,7 +79,23 @@ model EmailBatch {
   createdBy       String?
   createdAt       DateTime @default(now())
 
-  emails EmailJob[]
+  emails      EmailJob[]
+  attachments Attachment[]
+}
+
+/// Attachments are per-batch: every recipient of a compose gets the same files.
+/// Content is stored inline (bytea) to keep the assignment free of object storage.
+model Attachment {
+  id        String     @id @default(uuid())
+  batchId   String
+  batch     EmailBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  filename  String
+  mimeType  String
+  size      Int
+  content   Bytes
+  createdAt DateTime   @default(now())
+
+  @@index([batchId])
 }
 
 model EmailJob {
@@ -49,17 +106,23 @@ model EmailJob {
   sender      Sender      @relation(fields: [senderId], references: [id])
   recipient   String
   subject     String
-  body        String      @db.Text
+  body        String
   scheduledAt DateTime
   sentAt      DateTime?
   status      EmailStatus @default(SCHEDULED)
   attempts    Int         @default(0)
-  lastError   String?     @db.Text
+  lastError   String?
   messageId   String?
   previewUrl  String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+
+  starred    Boolean   @default(false)
+  archivedAt DateTime?
+  deletedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status, scheduledAt])
   @@index([batchId])
+  @@index([deletedAt, archivedAt])
 }

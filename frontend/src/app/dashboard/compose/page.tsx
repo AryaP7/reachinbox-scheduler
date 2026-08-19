@@ -1,19 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { RecipientInput } from '@/components/compose/RecipientInput';
 import { RichTextEditor } from '@/components/compose/RichTextEditor';
 import { SendLaterPopover } from '@/components/compose/SendLaterPopover';
+import { AttachmentList, PendingAttachment } from '@/components/compose/AttachmentList';
 import { Button, IconButton } from '@/components/ui/Button';
 import { ArrowLeftIcon, ChevronDownIcon, ClockIcon, PaperclipIcon } from '@/components/icons';
 import { fetchSenders, scheduleEmails } from '@/lib/api';
-import { defaultStartTime } from '@/lib/format';
+import { defaultStartTime, formatBytes } from '@/lib/format';
+import { fileToBase64 } from '@/lib/readFile';
+import { useMe } from '@/lib/useMe';
 import type { Sender } from '@/lib/types';
 
 const ROTATE = 'rotate';
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
 
 export default function ComposePage() {
   const router = useRouter();
@@ -30,6 +35,9 @@ export default function ComposePage() {
   const [startTime, setStartTime] = useState('');
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const attachRef = useRef<HTMLInputElement>(null);
+  const { me } = useMe();
 
   useEffect(() => {
     (async () => {
@@ -43,6 +51,45 @@ export default function ComposePage() {
   }, [idToken]);
 
   const scheduled = startTime !== '';
+
+  const handleAttach = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const incoming = Array.from(fileList);
+    let total = attachments.reduce((sum, a) => sum + a.size, 0);
+    const accepted: PendingAttachment[] = [];
+
+    for (const file of incoming) {
+      if (attachments.some((a) => a.filename === file.name)) {
+        toast.error(`${file.name} is already attached`);
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        toast.error(`${file.name} is larger than ${formatBytes(MAX_FILE_BYTES)}`);
+        continue;
+      }
+      if (total + file.size > MAX_TOTAL_BYTES) {
+        toast.error(`Attachments would exceed the ${formatBytes(MAX_TOTAL_BYTES)} total limit`);
+        break;
+      }
+      try {
+        accepted.push({
+          filename: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          content: await fileToBase64(file),
+          size: file.size,
+        });
+        total += file.size;
+      } catch {
+        toast.error(`Could not read ${file.name}`);
+      }
+    }
+
+    if (accepted.length) {
+      setAttachments((prev) => [...prev, ...accepted]);
+      toast.success(`Attached ${accepted.length} file${accepted.length === 1 ? '' : 's'}`);
+    }
+    if (attachRef.current) attachRef.current.value = '';
+  };
 
   const handleSubmit = async () => {
     if (recipients.length === 0) return toast.error('Add at least one recipient');
@@ -64,6 +111,13 @@ export default function ComposePage() {
           delayBetweenSeconds: Number(delaySeconds) || 0,
           hourlyLimit: Number(hourlyLimit) || undefined,
           senderId: senderId === ROTATE ? undefined : senderId,
+          attachments: attachments.length
+            ? attachments.map(({ filename, mimeType, content }) => ({
+                filename,
+                mimeType,
+                content,
+              }))
+            : undefined,
         },
         idToken
       );
@@ -75,6 +129,24 @@ export default function ComposePage() {
       setSubmitting(false);
     }
   };
+
+  if (me && !me.permissions.canSchedule) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-2 text-center">
+        <p className="text-[14px] font-medium text-ink">Read-only access</p>
+        <p className="max-w-sm text-[12px] text-ink-muted">
+          Your account has the Viewer role, which cannot schedule emails. Ask an admin to grant you
+          Member access.
+        </p>
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="mt-2 text-[13px] text-brand hover:underline"
+        >
+          Back to dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">
@@ -88,9 +160,28 @@ export default function ComposePage() {
         </button>
         <h1 className="flex-1 text-[17px] font-semibold text-ink">Compose New Email</h1>
 
-        <IconButton aria-label="Attach file" title="Attachments">
-          <PaperclipIcon className="h-4 w-4" />
-        </IconButton>
+        <div className="relative">
+          <IconButton
+            aria-label="Attach file"
+            title="Attach files"
+            onClick={() => attachRef.current?.click()}
+            className={attachments.length > 0 ? 'text-brand' : ''}
+          >
+            <PaperclipIcon className="h-4 w-4" />
+          </IconButton>
+          {attachments.length > 0 && (
+            <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[9px] font-semibold text-white">
+              {attachments.length}
+            </span>
+          )}
+          <input
+            ref={attachRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => void handleAttach(e.target.files)}
+          />
+        </div>
 
         <div className="relative">
           <IconButton
@@ -202,6 +293,13 @@ export default function ComposePage() {
           <div className="pt-1">
             <RichTextEditor onChange={setBody} placeholder="Type Your Reply..." />
           </div>
+
+          <AttachmentList
+            files={attachments}
+            onRemove={(filename) =>
+              setAttachments((prev) => prev.filter((a) => a.filename !== filename))
+            }
+          />
 
           {scheduled && (
             <p className="pt-2 text-[12px] text-ink-muted">

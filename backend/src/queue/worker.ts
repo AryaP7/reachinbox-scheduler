@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { redisConnection } from '../lib/redis';
 import { sendEmail } from '../lib/mailer';
 import { config } from '../config';
+import { getSetting } from '../services/settings';
 import { QUEUE_NAME, EmailJobPayload } from './emailQueue';
 import { acquireSendSlot } from './rateLimiter';
 
@@ -16,7 +17,10 @@ import { acquireSendSlot } from './rateLimiter';
 async function processEmailJob(job: Job<EmailJobPayload>, token?: string): Promise<void> {
   const email = await prisma.emailJob.findUnique({
     where: { id: job.data.emailId },
-    include: { sender: true, batch: true },
+    include: {
+      sender: true,
+      batch: { include: { attachments: true } },
+    },
   });
 
   if (!email) {
@@ -27,13 +31,23 @@ async function processEmailJob(job: Job<EmailJobPayload>, token?: string): Promi
     // Idempotency guard: never send the same email twice.
     return;
   }
+  if (email.status === 'CANCELLED' || email.deletedAt) {
+    console.log(`[worker] job ${job.id}: cancelled/deleted before sending, skipping`);
+    return;
+  }
 
-  const effectiveMinDelayMs = Math.max(config.minSendDelayMs, email.batch.delayBetweenMs);
+  // Read live so an admin changing throughput from the dashboard takes effect
+  // without a restart.
+  const [minDelayMs, senderHourlyLimit] = await Promise.all([
+    getSetting('MIN_SEND_DELAY_MS'),
+    getSetting('MAX_EMAILS_PER_HOUR_PER_SENDER'),
+  ]);
+  const effectiveMinDelayMs = Math.max(minDelayMs, email.batch.delayBetweenMs);
 
   const slot = await acquireSendSlot({
     senderId: email.senderId,
     batchId: email.batchId,
-    senderHourlyLimit: config.maxEmailsPerHourPerSender,
+    senderHourlyLimit,
     batchHourlyLimit: email.batch.hourlyLimit,
     minDelayMs: effectiveMinDelayMs,
   });
@@ -44,12 +58,30 @@ async function processEmailJob(job: Job<EmailJobPayload>, token?: string): Promi
     throw new DelayedError();
   }
 
-  await prisma.emailJob.update({
-    where: { id: email.id },
+  // Atomically claim the row before touching SMTP. If a concurrent delete
+  // cancelled or soft-deleted it in the window since the read above, this
+  // affects zero rows and we bail out instead of sending. Once claimed, the
+  // send is genuinely in flight and a later delete cannot recall it.
+  const claimed = await prisma.emailJob.updateMany({
+    where: { id: email.id, status: { in: ['SCHEDULED', 'PROCESSING'] }, deletedAt: null },
     data: { status: 'PROCESSING', attempts: { increment: 1 } },
   });
+  if (claimed.count === 0) {
+    console.log(`[worker] job ${job.id}: cancelled before claim, not sending`);
+    return;
+  }
 
-  const result = await sendEmail(email.sender, email.recipient, email.subject, email.body);
+  const result = await sendEmail(
+    email.sender,
+    email.recipient,
+    email.subject,
+    email.body,
+    email.batch.attachments.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.mimeType,
+    }))
+  );
 
   await prisma.emailJob.update({
     where: { id: email.id },
