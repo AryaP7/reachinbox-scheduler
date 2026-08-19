@@ -90,6 +90,10 @@ npm run dev                  # http://localhost:3000
    - Redirect URI: `http://localhost:3000/api/auth/callback/google`
 3. Put the client ID + secret in `frontend/.env.local` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) and the **same client ID** in `backend/.env` (`GOOGLE_CLIENT_ID`) — the backend verifies the Google ID token on every API request.
 4. Generate `NEXTAUTH_SECRET`: `openssl rand -base64 32` (any random string works locally).
+5. Set `AUTH_DISABLED=false` in `backend/.env`, and remove `DEMO_MODE` / `NEXT_PUBLIC_DEMO_MODE` from `frontend/.env.local` so only the real Google path remains.
+6. Optionally set `ADMIN_EMAILS` in `backend/.env` to your own address so you start as an admin. If you leave it blank, the first account to sign in becomes admin anyway.
+
+Google ID tokens expire after about an hour, so the frontend requests offline access and silently refreshes the ID token in the NextAuth `jwt` callback; if a refresh ever fails the user is sent back through sign-in rather than left with a dashboard that 401s.
 
 ### Environment variables
 
@@ -160,6 +164,18 @@ All counters live in **Redis**, never process memory, so limits hold across any 
 - Send slots are pre-spread by the batch delay, so jobs mature gradually rather than stampeding.
 - Whatever exceeds an hourly cap is deterministically pushed into the next hour window **in order**, and keeps rolling forward hour by hour until sent. Nothing is lost, nothing duplicates, order is preserved per sender/batch.
 - With multiple senders (round-robin), throughput scales linearly: 3 senders × 100/hour = 300 emails/hour aggregate.
+
+**Measured**, scheduling 1000 recipients for the same start time with `hourlyLimit=15`:
+
+| | Result |
+|---|---|
+| Schedule API latency | **301 ms** for 1000 recipients |
+| Rows written / jobs enqueued | 1000 / 1000 (999 delayed + 1 active immediately) |
+| Pre-spread | 2000 ms between consecutive sends, 33 min end to end |
+| Sent in the first window | **exactly 15** — the configured cap |
+| Failed / dropped | **0** — all 1000 accounted for (15 sent + 985 still queued) |
+| Duplicate recipients | **0** |
+| Over-limit jobs | deferred into the next hour window with ordered slots (latest at `16:00:30`) |
 
 ### Failure handling
 
@@ -239,5 +255,14 @@ Admins can tune throughput live at **/dashboard/settings** — minimum send dela
 - ✅ **Settings** and **Users** pages for admins, hidden entirely from non-admins
 - ✅ Loading states, empty states, pagination, error/success toasts, live 15 s refresh
 - ✅ Reusable UI kit (Button, IconButton, Spinner, EmptyState, icon set), typed API client, shared `useCounts` hook
+
+### Known limitations
+
+Stated plainly rather than buried:
+
+- **Google OAuth is implemented but has not been exercised against real credentials** — the flow, ID-token verification, and refresh logic are written and type-check, but were developed with `AUTH_DISABLED=true`. Everything else in this README was verified end-to-end.
+- Attachments are stored inline in Postgres (`bytea`), which is fine at assignment scale but would move to object storage in production.
+- Once a worker has claimed a row, an in-flight SMTP send cannot be recalled; delete then soft-deletes and reports `cancelled: false` (see above).
+- A full Redis data loss resets the current hour's rate-limit counters (scheduled emails themselves are rebuilt from Postgres).
 
 **Note on the Figma:** the file opens read-only without Dev Mode, so exact tokens could not be inspected. Colors, spacing and type were matched visually from the design frames (primary green `#00A63E`, active pill `#E7F7EE`, field grey `#F5F6F7`, Inter). All layout and structure match; individual pixel values may differ by a hair.

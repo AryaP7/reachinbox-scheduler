@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { Sidebar } from './Sidebar';
 import { useCounts } from '@/lib/useCounts';
 import { MeContext } from '@/lib/useMe';
@@ -16,6 +16,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [meLoading, setMeLoading] = useState(true);
 
   const idToken = session?.idToken;
+
+  // The Google ID token could not be renewed — send the user back through
+  // sign-in rather than leaving a dashboard that 401s on every request.
+  useEffect(() => {
+    if (session?.error === 'RefreshFailed' || session?.error === 'NoRefreshToken') {
+      void signIn('google', { callbackUrl: '/dashboard' });
+    }
+  }, [session?.error]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
