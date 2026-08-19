@@ -136,6 +136,10 @@ All counters live in **Redis**, never process memory, so limits hold across any 
 | Per-batch hourly cap (user's "Hourly limit" in compose) | `rl:batch:{id}:{hourWindow}` | Same pattern, layered on top of the sender cap |
 | Min delay between sends (**default 2 s per sender**, `MIN_SEND_DELAY_MS`) | `throttle:sender:{id}` | `SET NX PX` acts as an auto-expiring distributed lock; effective delay = `max(env min, batch delay)` |
 
+**Trade-off:** because the hourly counters live in Redis keyed by hour window, a *full Redis data loss* resets the hour's budget — recovered jobs get a fresh allowance for the current window. Scheduled emails themselves are never lost (they're rebuilt from Postgres by the reconciler); only the "how many have I already sent this hour" accounting resets. Moving counters to the DB would close this at the cost of a write on every send; Redis was chosen for throughput.
+
+**Ordering:** deferred jobs are re-slotted in order, but with worker concurrency > 1 the exact set that wins the last few slots of a window is racy (several jobs check the limit simultaneously). Order is preserved *as much as possible* rather than strictly FIFO.
+
 **When a limit is hit, jobs are never dropped or failed.** The worker calls `job.moveToDelayed(retryAt)` and throws BullMQ's `DelayedError`, which parks the job **without consuming a retry attempt**. Jobs deferred into the next hour window are assigned monotonically increasing slots (`nextWindowStart + seq × delay` via a Redis `resched:*` counter), which **preserves their relative order** and pre-spaces them so they don't re-trip the throttle when the window opens.
 
 ### Concurrency
