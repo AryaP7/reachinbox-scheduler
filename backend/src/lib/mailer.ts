@@ -51,8 +51,29 @@ export interface EtherealAccount {
   smtpPass: string;
 }
 
+interface EtherealApiResponse {
+  status: string;
+  user: string;
+  pass: string;
+  smtp: { host: string; port: number; secure: boolean };
+}
+
 export async function createEtherealAccount(index: number): Promise<EtherealAccount> {
-  const account = await nodemailer.createTestAccount();
+  // nodemailer.createTestAccount() caches one account per process, so asking it
+  // for several senders returns the same address every time. Hit Ethereal's
+  // account API directly (what nodemailer uses internally) to get distinct ones.
+  const res = await fetch('https://api.nodemailer.com/user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestor: 'reachinbox-scheduler', version: '1.0.0' }),
+  });
+  if (!res.ok) {
+    throw new Error(`Ethereal account creation failed with status ${res.status}`);
+  }
+  const account = (await res.json()) as EtherealApiResponse;
+  if (account.status !== 'success' || !account.user) {
+    throw new Error('Ethereal account creation returned an unexpected response');
+  }
   return {
     name: `ReachInbox Sender ${index}`,
     email: account.user,

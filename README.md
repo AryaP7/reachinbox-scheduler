@@ -26,7 +26,18 @@ reachinbox-scheduler/
 
 ---
 
-## 1. Running the project
+## 0. Quick local demo (no Docker, no Google OAuth)
+
+For a fast local test the repo ships a demo path — SQLite instead of Postgres, and an env-gated demo login instead of OAuth (Google OAuth remains the real login; the demo provider only exists when `DEMO_MODE=true`):
+
+1. Run any Redis-compatible server on `localhost:6379` (Docker, Memurai, or [redis-windows](https://github.com/taizod1024/redis-windows-fork) on Windows).
+2. Backend: set `DATABASE_URL="file:./demo.db"` and `AUTH_DISABLED=true` in `backend/.env`, then `npm run demo:db && npm run dev`.
+3. Frontend: set `DEMO_MODE=true`, `NEXT_PUBLIC_DEMO_MODE=true`, and any `NEXTAUTH_SECRET` in `frontend/.env.local`, then `npm run dev`.
+4. Open http://localhost:3000 → "Continue in demo mode" → schedule away. Sent emails link to their live Ethereal previews.
+
+> Note: switching between demo (SQLite) and full (Postgres) modes regenerates the Prisma client — run `npm run prisma:generate` (Postgres) or `npm run demo:db` (SQLite) after switching.
+
+## 1. Running the project (full setup)
 
 ### Prerequisites
 

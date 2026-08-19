@@ -14,7 +14,12 @@ export async function ensureSenders(): Promise<void> {
   console.log(`[senders] provisioning ${toCreate} Ethereal account(s)...`);
   for (let i = existing + 1; i <= config.senderCount; i++) {
     const account = await createEtherealAccount(i);
-    await prisma.sender.create({ data: account });
+    // upsert keeps boot idempotent if Ethereal ever hands back a duplicate.
+    await prisma.sender.upsert({
+      where: { email: account.email },
+      update: {},
+      create: account,
+    });
     console.log(`[senders] created ${account.email}`);
   }
 }

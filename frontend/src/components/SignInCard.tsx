@@ -58,6 +58,19 @@ export function SignInCard() {
         Continue with Google
       </button>
 
+      {process.env.NEXT_PUBLIC_DEMO_MODE === 'true' && (
+        <button
+          onClick={() => {
+            setLoading(true);
+            void signIn('demo', { callbackUrl: '/dashboard' });
+          }}
+          disabled={loading}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-gray-300 transition-colors hover:bg-surface-border disabled:opacity-70"
+        >
+          Continue in demo mode (local testing)
+        </button>
+      )}
+
       <p className="mt-6 text-center text-xs text-gray-600">
         Sign in with your Google account to access the dashboard.
       </p>

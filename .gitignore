@@ -8,3 +8,7 @@ out/
 *.log
 .DS_Store
 coverage/
+
+# Local SQLite demo database (contains generated Ethereal SMTP credentials)
+*.db
+*.db-journal

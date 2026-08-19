@@ -1,0 +1,63 @@
+// SQLite variant of the schema for quick local demos (no Postgres needed).
+// Differences from schema.prisma: provider, no native enum (SQLite doesn't
+// support them — status is a plain String with the same values), no @db.Text.
+// Use: npm run demo:db  (pushes this schema + regenerates the client)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Sender {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  smtpHost  String
+  smtpPort  Int
+  smtpUser  String
+  smtpPass  String
+  createdAt DateTime @default(now())
+
+  emails EmailJob[]
+}
+
+model EmailBatch {
+  id              String   @id @default(uuid())
+  subject         String
+  body            String
+  totalRecipients Int
+  startTime       DateTime
+  delayBetweenMs  Int
+  hourlyLimit     Int?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+
+  emails EmailJob[]
+}
+
+model EmailJob {
+  id          String     @id @default(uuid())
+  batchId     String
+  batch       EmailBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      Sender     @relation(fields: [senderId], references: [id])
+  recipient   String
+  subject     String
+  body        String
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      String     @default("SCHEDULED")
+  attempts    Int        @default(0)
+  lastError   String?
+  messageId   String?
+  previewUrl  String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([batchId])
+}
