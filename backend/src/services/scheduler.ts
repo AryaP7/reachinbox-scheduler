@@ -12,6 +12,8 @@ export interface ScheduleBatchInput {
   delayBetweenSeconds: number;
   hourlyLimit?: number;
   createdBy?: string;
+  /** Pin the batch to one sender; omit to rotate round-robin across all senders. */
+  senderId?: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,9 +38,17 @@ export async function scheduleBatch(input: ScheduleBatchInput) {
     throw new HttpError(400, 'A single batch is limited to 10,000 recipients');
   }
 
-  const senders = await prisma.sender.findMany({ orderBy: { createdAt: 'asc' } });
+  const senders = input.senderId
+    ? await prisma.sender.findMany({ where: { id: input.senderId } })
+    : await prisma.sender.findMany({ orderBy: { createdAt: 'asc' } });
+
   if (senders.length === 0) {
-    throw new HttpError(503, 'No sender accounts are configured yet, try again shortly');
+    throw new HttpError(
+      input.senderId ? 400 : 503,
+      input.senderId
+        ? 'The selected sender no longer exists'
+        : 'No sender accounts are configured yet, try again shortly'
+    );
   }
 
   const delayMs = Math.max(input.delayBetweenSeconds * 1000, config.minSendDelayMs);

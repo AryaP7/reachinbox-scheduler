@@ -167,9 +167,13 @@ All endpoints (except `/health`) require `Authorization: Bearer <Google ID token
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/emails/schedule` | Schedule a batch. Body: `{ subject, body, recipients[], startTime, delayBetweenSeconds, hourlyLimit? }` |
-| `GET` | `/api/emails?status=scheduled\|sent&page=&pageSize=` | Paginated list (scheduled = SCHEDULED+PROCESSING asc by time; sent = SENT+FAILED desc) |
-| `GET` | `/api/emails/senders` | List provisioned Ethereal senders |
+| `GET` | `/api/emails?status=scheduled\|sent&page=&pageSize=&search=` | Paginated list (scheduled = SCHEDULED+PROCESSING asc by time; sent = SENT+FAILED desc) |
+| `GET` | `/api/emails/counts` | `{ scheduled, sent }` totals for the sidebar |
+| `GET` | `/api/emails/senders` | List provisioned Ethereal senders (populates the From selector) |
+| `GET` | `/api/emails/:id` | Single email with full body, for the detail view |
 | `GET` | `/health` | Liveness probe |
+
+`POST /api/emails/schedule` also accepts an optional `senderId` — omit it to rotate round-robin across every sender, or pin the batch to one sender.
 
 ---
 
@@ -184,12 +188,13 @@ All endpoints (except `/health`) require `Authorization: Bearer <Google ID token
 - ✅ Concurrency: configurable worker concurrency, safe under parallelism
 - ✅ Retries with backoff + `FAILED` state; Zod-validated APIs; Google ID token verification middleware
 
-**Frontend**
-- ✅ Real Google OAuth login (NextAuth), redirect to dashboard, protected routes via middleware
-- ✅ Header with user name, email, avatar + logout
-- ✅ Tabs: Scheduled Emails / Sent Emails with pagination, loading states, empty states, live 15 s refresh
-- ✅ Compose modal: subject, body, CSV/text lead upload with detected-address count, start time, delay between emails, hourly limit
-- ✅ Sent tab: sent time, status (`sent`/`failed` with error), Ethereal preview link
-- ✅ Reusable UI kit (Button, Input, TextArea, Modal, Badge, Spinner, EmptyState, Tabs, Table), typed API client, toasts for errors/success
+**Frontend** — built to match the provided Figma (light theme, left sidebar, list rows):
+- ✅ **Login screen**: Google OAuth via NextAuth + the email/password form from the design, centered card
+- ✅ **Sidebar**: ONB logo, user avatar/name/email with logout menu, Compose button, CORE nav (Scheduled / Sent) with live counts
+- ✅ **List screens**: search + filter + refresh row; rows show `To:`, an orange scheduled-time chip (or Sent/Failed chip), bold subject with body preview, and a star toggle
+- ✅ **Compose page**: From selector (real sender accounts, or round-robin), recipient chips with `+N` overflow, Upload List for CSV/TXT, Subject, Delay between 2 emails, Hourly Limit, rich-text editor with the full Figma toolbar, and a Send Later popover with quick picks
+- ✅ **Email detail**: sender block with avatar, recipient, timestamp, rendered HTML body, status pill, Ethereal preview link
+- ✅ Loading states, empty states, pagination, error/success toasts, live 15 s refresh
+- ✅ Reusable UI kit (Button, IconButton, Spinner, EmptyState, icon set), typed API client, shared `useCounts` hook
 
-**Note on the Figma:** the provided Figma file requires design-file access; the dashboard was built to match the described structure (header, tabs, compose flow, tables) with a clean dark ReachInbox-style theme. Happy to pixel-match given view access.
+**Note on the Figma:** the file opens read-only without Dev Mode, so exact tokens could not be inspected. Colors, spacing and type were matched visually from the design frames (primary green `#00A63E`, active pill `#E7F7EE`, field grey `#F5F6F7`, Inter). All layout and structure match; individual pixel values may differ by a hair.

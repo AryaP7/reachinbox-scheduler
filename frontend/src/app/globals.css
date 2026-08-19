@@ -3,5 +3,38 @@
 @tailwind utilities;
 
 body {
-  @apply bg-surface text-gray-100 antialiased;
+  @apply bg-white text-ink antialiased;
+}
+
+/* Placeholder for the contentEditable compose body */
+[contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  @apply text-ink-faint;
+  pointer-events: none;
+}
+
+.compose-body ul {
+  @apply ml-5 list-disc;
+}
+.compose-body ol {
+  @apply ml-5 list-decimal;
+}
+.compose-body blockquote {
+  @apply border-l-2 border-line pl-3 text-ink-muted;
+}
+
+.email-body p {
+  @apply mb-3;
+}
+.email-body ul {
+  @apply mb-3 ml-5 list-disc;
+}
+.email-body ol {
+  @apply mb-3 ml-5 list-decimal;
+}
+.email-body blockquote {
+  @apply mb-3 border-l-2 border-line pl-3 text-ink-muted;
+}
+.email-body a {
+  @apply text-brand underline;
 }

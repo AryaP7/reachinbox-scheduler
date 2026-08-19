@@ -8,19 +8,22 @@ interface EmptyStateProps {
 
 export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      <div className="rounded-full bg-surface-raised p-4">
-        <svg className="h-8 w-8 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-          />
+    <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
+      <div className="rounded-full bg-line-soft p-3.5">
+        <svg
+          className="h-6 w-6 text-ink-faint"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <rect x="2.5" y="5" width="19" height="14" rx="2" />
+          <path d="M3 7l9 6 9-6" />
         </svg>
       </div>
       <div>
-        <p className="text-base font-medium text-gray-200">{title}</p>
-        <p className="mt-1 text-sm text-gray-500">{description}</p>
+        <p className="text-[14px] font-medium text-ink">{title}</p>
+        <p className="mt-0.5 text-[12px] text-ink-muted">{description}</p>
       </div>
       {action}
     </div>

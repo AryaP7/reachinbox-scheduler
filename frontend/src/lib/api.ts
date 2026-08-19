@@ -1,8 +1,20 @@
-import type { EmailListResponse, ScheduleRequest, ScheduleResponse } from './types';
+import type {
+  Counts,
+  EmailItem,
+  EmailListResponse,
+  ScheduleRequest,
+  ScheduleResponse,
+  Sender,
+  TabKey,
+} from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-async function request<T>(path: string, idToken: string | undefined, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  idToken: string | undefined,
+  init?: RequestInit
+): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
@@ -28,11 +40,26 @@ async function request<T>(path: string, idToken: string | undefined, init?: Requ
 }
 
 export function fetchEmails(
-  status: 'scheduled' | 'sent',
+  status: TabKey,
   page: number,
-  idToken: string | undefined
+  idToken: string | undefined,
+  search?: string
 ): Promise<EmailListResponse> {
-  return request(`/api/emails?status=${status}&page=${page}&pageSize=20`, idToken);
+  const params = new URLSearchParams({ status, page: String(page), pageSize: '20' });
+  if (search) params.set('search', search);
+  return request(`/api/emails?${params.toString()}`, idToken);
+}
+
+export function fetchEmail(id: string, idToken: string | undefined): Promise<EmailItem> {
+  return request(`/api/emails/${id}`, idToken);
+}
+
+export function fetchCounts(idToken: string | undefined): Promise<Counts> {
+  return request('/api/emails/counts', idToken);
+}
+
+export function fetchSenders(idToken: string | undefined): Promise<{ senders: Sender[] }> {
+  return request('/api/emails/senders', idToken);
 }
 
 export function scheduleEmails(

@@ -25,18 +25,36 @@ export interface SendResult {
   previewUrl: string | null;
 }
 
+const HTML_TAG_RE = /<\/?[a-z][\s\S]*?>/i;
+
+/** Plain-text fallback for HTML bodies produced by the compose editor. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function sendEmail(
   sender: Sender,
   to: string,
   subject: string,
   body: string
 ): Promise<SendResult> {
+  // The compose editor sends HTML; the API also accepts plain text.
+  const isHtml = HTML_TAG_RE.test(body);
   const info = await transporterFor(sender).sendMail({
     from: `"${sender.name}" <${sender.email}>`,
     to,
     subject,
-    text: body,
-    html: body.replace(/\n/g, '<br/>'),
+    text: isHtml ? htmlToText(body) : body,
+    html: isHtml ? body : body.replace(/\n/g, '<br/>'),
   });
   const preview = nodemailer.getTestMessageUrl(info);
   return { messageId: info.messageId, previewUrl: preview ? String(preview) : null };

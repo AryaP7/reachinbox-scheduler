@@ -12,9 +12,11 @@ export function Providers({ children }: { children: ReactNode }) {
         position="bottom-right"
         toastOptions={{
           style: {
-            background: '#1a2234',
-            color: '#e5e7eb',
-            border: '1px solid #232d42',
+            background: '#FFFFFF',
+            color: '#1A1A1A',
+            border: '1px solid #E9EAEC',
+            fontSize: '13px',
+            boxShadow: '0 8px 24px rgba(16, 24, 40, 0.12)',
           },
         }}
       />
